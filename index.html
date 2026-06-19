@@ -199,12 +199,22 @@
       const raw = extractRecords(payload);
       return raw.map(record => {
         const source = record && record.fields ? record.fields : record;
+        const repairedSource = repairRecord(source || {});
         const place = {};
         REQUIRED_FIELDS.forEach(field => {
-          place[field] = normalizeCell(source ? source[field] : '');
+          place[field] = normalizeCell(repairedSource[field] || '');
         });
         return place;
       }).filter(place => place.名称 && place.类型);
+    }
+
+    function repairRecord(source) {
+      const repaired = {};
+      Object.entries(source).forEach(([key, value]) => {
+        const fixedKey = repairMojibake(String(key));
+        repaired[fixedKey] = value;
+      });
+      return repaired;
     }
 
     function extractRecords(payload) {
@@ -228,7 +238,25 @@
         if ('value' in value) return normalizeCell(value.value);
         return Object.values(value).map(normalizeCell).filter(Boolean).join('/');
       }
-      return String(value).trim();
+      return repairMojibake(String(value)).trim();
+    }
+
+    // 兼容 Worker/飞书链路中偶发的 UTF-8 被按 Latin-1 解释导致的中文乱码，例如“名称”变成“åç§°”。
+    function repairMojibake(value) {
+      const text = String(value || '');
+      if (!/[ÃÂÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîï]/.test(text)) return text;
+      try {
+        const bytes = [];
+        for (const ch of text) {
+          const code = ch.charCodeAt(0);
+          if (code > 255) return text;
+          bytes.push('%' + code.toString(16).padStart(2, '0'));
+        }
+        const decoded = decodeURIComponent(bytes.join(''));
+        return /[一-鿿]/.test(decoded) ? decoded : text;
+      } catch (error) {
+        return text;
+      }
     }
 
     function setLoading(disabled, message) {
