@@ -61,15 +61,16 @@
     .primary {
       width: 100%; margin-top: 18px; border: 0; border-radius: 7px; padding: 13px 14px;
       background: linear-gradient(135deg, var(--leaf), var(--river)); color: white; font-weight: 800;
-      font-size: 16px; cursor: pointer; box-shadow: 0 10px 24px rgba(47,111,78,.28);
+      font-size: 16px; cursor: pointer; box-shadow: 0 10px 24px rgba(47,111,78,.28); touch-action: manipulation;
     }
+    .primary:disabled { opacity: .58; cursor: not-allowed; box-shadow: none; }
     .secondary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
     .secondary { border: 1px solid var(--line); border-radius: 7px; padding: 10px; background: white; color: var(--leaf-dark); font-weight: 700; cursor: pointer; }
     .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
     .stat { padding: 13px; border-radius: 8px; background: rgba(255,255,255,.74); border: 1px solid var(--line); }
     .stat b { display: block; font-size: 22px; color: var(--leaf-dark); }
     .stat span { color: var(--muted); font-size: 12px; }
-    .output { padding: 18px; min-height: 500px; }
+    .output { padding: 18px; min-height: 500px; scroll-margin-top: 14px; }
     .empty {
       display: grid; place-items: center; min-height: 430px; color: var(--muted); text-align: center;
       border: 1px dashed var(--line); border-radius: 8px; background: rgba(238,245,236,.65); padding: 18px;
@@ -241,6 +242,7 @@
 
     function setError(message) {
       $('output').innerHTML = `<div class="empty"><div><strong>接口请求失败</strong><br>${escapeText(message)}</div></div>`;
+      revealOutput();
     }
 
     function renderCheckboxes(id, options, checked) {
@@ -272,6 +274,7 @@
         setError('当前没有可用点位数据，无法生成行程。');
         return;
       }
+      $('generateBtn').textContent = '正在生成...';
       const days = Number($('days').value);
       const people = Number($('people').value || 1);
       const ages = selectedValues('ageGroup');
@@ -282,10 +285,13 @@
       if (!scored.length) {
         currentPlan = null;
         renderNoMatch(days, people, ages, prefs);
+        $('generateBtn').textContent = '生成镇江专属行程';
         return;
       }
       currentPlan = buildSchedule(days, people, ages, prefs, scored);
       renderPlan(currentPlan);
+      $('generateBtn').textContent = '生成镇江专属行程';
+      revealOutput();
     }
 
     function renderNoMatch(days, people, ages, prefs) {
@@ -298,6 +304,16 @@
           </div>
         </div>
       `;
+      revealOutput();
+    }
+
+    function revealOutput() {
+      const output = $('output');
+      if (!output) return;
+      const narrow = window.matchMedia && window.matchMedia('(max-width: 900px)').matches;
+      if (narrow) {
+        setTimeout(() => output.scrollIntoView({ behavior: 'smooth', block: 'start' }), 30);
+      }
     }
 
     // 核心筛选逻辑：与 Skill 规则保持一致，老人低体力、儿童亲子、年轻人徒步露营、省钱优先低消费。
