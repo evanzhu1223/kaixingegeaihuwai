@@ -147,7 +147,10 @@
   <div class="toast" id="toast">已复制</div>
 
   <script>
-    const DATA_API = 'https://zhenjiang-feishu-proxy.zhuqu1223.workers.dev/';
+    const DATA_APIS = [
+      '/api/places',
+      'https://zhenjiang-feishu-proxy.zhuqu1223.workers.dev/'
+    ];
     const REQUIRED_FIELDS = ['名称', '类型', '游玩耗时', '体力强度', '适配人群', '人均消费', '推荐停留时段', '特色亮点', '避坑提示', '地理位置'];
     const FALLBACK_PLACES = [
   {
@@ -858,16 +861,24 @@
       $('copySocialBtn').addEventListener('click', () => copyText(currentPlan?.socialText || '', '请先生成行程'));
       $('copyDmBtn').addEventListener('click', () => copyText(currentPlan?.dmText || '', '请先生成行程'));
       $('generateBtn').disabled = !PLACES.length;
-      setReady(`已启用内置备用数据 ${PLACES.length} 个点位，正在尝试同步飞书最新数据...`);
+      setReady(`已启用内置备用数据 ${PLACES.length} 个点位，正在尝试通过同域接口同步飞书最新数据...`);
       loadPlaces();
     }
 
     async function loadPlaces() {
       if (!PLACES.length) setLoading(true, '正在从飞书多维表格加载镇江点位数据...');
+      const errors = [];
       try {
-        const response = await fetch(DATA_API, { method: 'GET', cache: 'no-store' });
-        if (!response.ok) throw new Error(`接口返回 ${response.status}`);
-        const payload = await response.json();
+        let payload = null;
+        for (const api of DATA_APIS) {
+          try {
+            payload = await fetchJsonWithTimeout(api, 8000);
+            break;
+          } catch (error) {
+            errors.push(`${api}: ${error.message || error}`);
+          }
+        }
+        if (!payload) throw new Error(errors.join('；'));
         const places = normalizePlaces(payload);
         if (!places.length) throw new Error('接口返回的数据为空，或未识别到点位字段');
         PLACES = places;
@@ -879,6 +890,26 @@
         renderStats();
         $('generateBtn').disabled = !PLACES.length;
         setReady(`飞书实时数据加载失败，当前使用内置备用数据 ${PLACES.length} 个点位。失败原因：${escapeText(error.message || error)}。`);
+      }
+    }
+
+    async function fetchJsonWithTimeout(url, timeoutMs) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const separator = url.includes('?') ? '&' : '?';
+        const response = await fetch(`${url}${separator}_=${Date.now()}`, {
+          method: 'GET',
+          cache: 'no-store',
+          signal: controller.signal
+        });
+        if (!response.ok) throw new Error(`接口返回 ${response.status}`);
+        return await response.json();
+      } catch (error) {
+        if (error && error.name === 'AbortError') throw new Error('请求超时');
+        throw error;
+      } finally {
+        clearTimeout(timer);
       }
     }
 
