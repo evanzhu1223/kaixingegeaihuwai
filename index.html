@@ -897,8 +897,9 @@
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), timeoutMs);
       try {
-        const separator = url.includes('?') ? '&' : '?';
-        const response = await fetch(`${url}${separator}_=${Date.now()}`, {
+        const requestUrl = new URL(url, window.location.href);
+        requestUrl.searchParams.set('_', String(Date.now()));
+        const response = await fetch(requestUrl.toString(), {
           method: 'GET',
           cache: 'no-store',
           signal: controller.signal
