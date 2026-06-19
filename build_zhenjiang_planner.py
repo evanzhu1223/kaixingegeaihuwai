@@ -1,0 +1,572 @@
+from pathlib import Path
+import json
+import openpyxl
+
+
+WORKBOOK = Path(r"E:\evan-codex\codex-list\镇江吃喝玩乐资源库.xlsx")
+OUTPUT = Path(r"E:\evan-codex\codex-list\zhenjiang_travel_planner.html")
+
+
+def load_places():
+    wb = openpyxl.load_workbook(WORKBOOK, read_only=True, data_only=True)
+    ws = wb["Sheet1"]
+    headers = [ws.cell(1, c).value for c in range(2, 12)]
+    expected = ["名称", "类型", "游玩耗时", "体力强度", "适配人群", "人均消费", "推荐停留时段", "特色亮点", "避坑提示", "地理位置"]
+    if headers != expected:
+        raise SystemExit(f"Unexpected headers: {headers}")
+    places = []
+    for row in ws.iter_rows(min_row=2, min_col=2, max_col=11, values_only=True):
+        if row[0]:
+            places.append({key: ("" if value is None else str(value)) for key, value in zip(headers, row)})
+    return places
+
+
+def build_html(places):
+    return """<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>开心哥哥爱户外｜镇江专属行程生成器</title>
+  <style>
+    :root {
+      --leaf: #2f6f4e;
+      --leaf-dark: #1f4f39;
+      --river: #2b7a8a;
+      --sun: #f2b84b;
+      --paper: #fbfaf4;
+      --mist: #eef5ec;
+      --ink: #24352c;
+      --muted: #66756c;
+      --line: #d9e4d6;
+      --white: #ffffff;
+      --shadow: 0 16px 40px rgba(31, 79, 57, 0.14);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: "Microsoft YaHei", "PingFang SC", system-ui, -apple-system, sans-serif;
+      color: var(--ink);
+      background:
+        linear-gradient(120deg, rgba(47,111,78,.16), rgba(43,122,138,.10) 42%, rgba(242,184,75,.15)),
+        var(--paper);
+      min-height: 100vh;
+    }
+    .hero {
+      padding: 32px 20px 22px;
+      color: white;
+      background: linear-gradient(135deg, rgba(31,79,57,.96), rgba(43,122,138,.88));
+    }
+    .hero-inner, main, footer { max-width: 1180px; margin: 0 auto; }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 800; letter-spacing: 0; }
+    .brand-mark {
+      width: 38px; height: 38px; border-radius: 50%; display: grid; place-items: center;
+      background: rgba(255,255,255,.16); border: 1px solid rgba(255,255,255,.28);
+    }
+    h1 { margin: 18px 0 8px; font-size: clamp(28px, 4vw, 48px); line-height: 1.08; letter-spacing: 0; }
+    .subtitle { max-width: 760px; margin: 0; color: rgba(255,255,255,.86); line-height: 1.75; }
+    main { padding: 22px 20px 34px; }
+    .layout { display: grid; grid-template-columns: 360px minmax(0, 1fr); gap: 18px; align-items: start; }
+    .panel { background: rgba(255,255,255,.88); border: 1px solid var(--line); border-radius: 8px; box-shadow: var(--shadow); }
+    .controls { padding: 18px; position: sticky; top: 14px; }
+    .section-title { font-size: 18px; margin: 0 0 14px; }
+    label { display: block; font-size: 13px; color: var(--muted); margin: 14px 0 7px; }
+    select, input[type="number"] {
+      width: 100%; border: 1px solid var(--line); border-radius: 6px; padding: 11px 12px;
+      background: white; color: var(--ink); font-size: 15px; outline: none;
+    }
+    select:focus, input:focus { border-color: var(--river); box-shadow: 0 0 0 3px rgba(43,122,138,.14); }
+    .chips { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 8px; }
+    .chip {
+      display: flex; gap: 7px; align-items: center; min-height: 40px; padding: 9px 10px;
+      border: 1px solid var(--line); border-radius: 6px; background: #fff; cursor: pointer; font-size: 14px;
+    }
+    .chip input { accent-color: var(--leaf); }
+    .primary {
+      width: 100%; margin-top: 18px; border: 0; border-radius: 7px; padding: 13px 14px;
+      background: linear-gradient(135deg, var(--leaf), var(--river)); color: white; font-weight: 800;
+      font-size: 16px; cursor: pointer; box-shadow: 0 10px 24px rgba(47,111,78,.28);
+    }
+    .secondary-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
+    .secondary { border: 1px solid var(--line); border-radius: 7px; padding: 10px; background: white; color: var(--leaf-dark); font-weight: 700; cursor: pointer; }
+    .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 14px; }
+    .stat { padding: 13px; border-radius: 8px; background: rgba(255,255,255,.74); border: 1px solid var(--line); }
+    .stat b { display: block; font-size: 22px; color: var(--leaf-dark); }
+    .stat span { color: var(--muted); font-size: 12px; }
+    .output { padding: 18px; min-height: 500px; }
+    .empty {
+      display: grid; place-items: center; min-height: 430px; color: var(--muted); text-align: center;
+      border: 1px dashed var(--line); border-radius: 8px; background: rgba(238,245,236,.65); padding: 18px;
+    }
+    .day { border: 1px solid var(--line); border-radius: 8px; overflow: hidden; margin-bottom: 14px; background: white; }
+    .day-head { display: flex; justify-content: space-between; gap: 12px; padding: 14px 16px; background: var(--mist); border-bottom: 1px solid var(--line); }
+    .day-head h3 { margin: 0; font-size: 18px; }
+    .day-theme { color: var(--leaf-dark); font-size: 13px; font-weight: 700; }
+    .slot { display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 14px 16px; border-bottom: 1px solid #edf2ea; }
+    .slot:last-child { border-bottom: 0; }
+    .slot-time { font-weight: 800; color: var(--river); }
+    .place-title { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; }
+    .place-title strong { font-size: 16px; }
+    .tag { display: inline-flex; align-items: center; min-height: 22px; padding: 2px 7px; border-radius: 999px; background: #edf5e8; color: var(--leaf-dark); font-size: 12px; }
+    .meta { color: var(--muted); font-size: 13px; line-height: 1.7; }
+    .tip { margin-top: 7px; padding: 8px 10px; border-left: 3px solid var(--sun); background: #fff8e6; color: #745626; font-size: 13px; line-height: 1.6; }
+    .copy-area { margin-top: 18px; display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    textarea { width: 100%; min-height: 260px; resize: vertical; border: 1px solid var(--line); border-radius: 8px; padding: 12px; line-height: 1.7; color: var(--ink); background: #fff; }
+    .note { margin-top: 12px; color: var(--muted); font-size: 13px; line-height: 1.7; }
+    footer { padding: 0 20px 28px; color: var(--muted); text-align: center; }
+    .footer-card { border-top: 1px solid var(--line); padding-top: 18px; }
+    .toast { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); background: var(--leaf-dark); color: white; padding: 10px 14px; border-radius: 999px; opacity: 0; pointer-events: none; transition: .2s; }
+    .toast.show { opacity: 1; }
+    @media (max-width: 900px) {
+      .layout { grid-template-columns: 1fr; }
+      .controls { position: static; }
+      .stats, .copy-area { grid-template-columns: 1fr 1fr; }
+    }
+    @media (max-width: 560px) {
+      .chips, .stats, .copy-area, .secondary-row { grid-template-columns: 1fr; }
+      .slot { grid-template-columns: 1fr; gap: 4px; }
+      .day-head { display: block; }
+    }
+  </style>
+</head>
+<body>
+  <header class="hero">
+    <div class="hero-inner">
+      <div class="brand"><span class="brand-mark">山</span><span>开心哥哥爱户外</span></div>
+      <h1>镇江专属行程生成器</h1>
+      <p class="subtitle">自动读取镇江点位数据，匹配户外徒步、美食探店、亲子休闲、夜景打卡和平价路线，一键生成私信版与小红书文案。</p>
+    </div>
+  </header>
+
+  <main>
+    <div class="stats" id="stats"></div>
+    <div class="layout">
+      <aside class="panel controls">
+        <h2 class="section-title">出行条件</h2>
+        <label for="days">出行天数</label>
+        <select id="days"></select>
+        <label for="people">出行总人数</label>
+        <input id="people" type="number" min="1" max="30" value="2">
+        <label>成员类型</label>
+        <div class="chips" id="ageGroup"></div>
+        <label>游玩偏好</label>
+        <div class="chips" id="prefs"></div>
+        <button class="primary" id="generateBtn" disabled>生成镇江专属行程</button>
+        <div class="secondary-row">
+          <button class="secondary" id="copySocialBtn">复制小红书文案</button>
+          <button class="secondary" id="copyDmBtn">复制私信版行程</button>
+        </div>
+        <p class="note">点位数据来自飞书多维表格代理接口。若加载失败，请检查网络或 Worker 接口状态。</p>
+      </aside>
+      <section class="panel output" id="output">
+        <div class="empty">正在加载镇江点位数据，请稍候...</div>
+      </section>
+    </div>
+  </main>
+
+  <footer>
+    <div class="footer-card">抖音 / 小红书搜索：开心哥哥爱户外｜镇江本地户外、美食、亲子路线持续更新</div>
+  </footer>
+  <div class="toast" id="toast">已复制</div>
+
+  <script>
+    const DATA_API = 'https://zhenjiang-feishu-proxy.zhuqu1223.workers.dev/';
+    const REQUIRED_FIELDS = ['名称', '类型', '游玩耗时', '体力强度', '适配人群', '人均消费', '推荐停留时段', '特色亮点', '避坑提示', '地理位置'];
+    let PLACES = [];
+
+    const AGE_OPTIONS = ['幼儿', '孩童', '中青年', '60+老人'];
+    const PREF_OPTIONS = ['户外徒步', '美食探店', '亲子休闲', '慢节奏少走路', '夜景打卡', '小众冷门', '平价省钱'];
+    let currentPlan = null;
+
+    const $ = (id) => document.getElementById(id);
+    const includesAny = (text, words) => words.some(w => String(text || '').includes(w));
+    const priceValue = (v) => {
+      const nums = String(v || '').match(/\d+/g);
+      return nums ? Math.min(...nums.map(Number)) : 999;
+    };
+
+    async function init() {
+      $('days').innerHTML = Array.from({ length: 7 }, (_, i) => `<option value="${i + 1}">${i + 1}天</option>`).join('');
+      $('days').value = '2';
+      renderCheckboxes('ageGroup', AGE_OPTIONS, ['中青年']);
+      renderCheckboxes('prefs', PREF_OPTIONS, ['户外徒步', '平价省钱']);
+      renderStats();
+      $('generateBtn').addEventListener('click', generatePlan);
+      $('copySocialBtn').addEventListener('click', () => copyText(currentPlan?.socialText || '', '请先生成行程'));
+      $('copyDmBtn').addEventListener('click', () => copyText(currentPlan?.dmText || '', '请先生成行程'));
+      await loadPlaces();
+    }
+
+    async function loadPlaces() {
+      setLoading(true, '正在从飞书多维表格加载镇江点位数据...');
+      try {
+        const response = await fetch(DATA_API, { method: 'GET', cache: 'no-store' });
+        if (!response.ok) throw new Error(`接口返回 ${response.status}`);
+        const payload = await response.json();
+        const places = normalizePlaces(payload);
+        if (!places.length) throw new Error('接口返回的数据为空，或未识别到点位字段');
+        PLACES = places;
+        currentPlan = null;
+        renderStats();
+        $('generateBtn').disabled = false;
+        setReady(`已加载 ${PLACES.length} 个镇江点位。选择条件后点击生成，系统会按老人低体力、儿童亲子、年轻人徒步露营、平价省钱和地理分区规则自动排程。`);
+      } catch (error) {
+        PLACES = [];
+        renderStats();
+        $('generateBtn').disabled = true;
+        setError(`点位数据加载失败：${error.message || error}。请检查网络、Worker 接口或飞书代理返回格式。`);
+      }
+    }
+
+    function normalizePlaces(payload) {
+      const raw = extractRecords(payload);
+      return raw.map(record => {
+        const source = record && record.fields ? record.fields : record;
+        const place = {};
+        REQUIRED_FIELDS.forEach(field => {
+          place[field] = normalizeCell(source ? source[field] : '');
+        });
+        return place;
+      }).filter(place => place.名称 && place.类型);
+    }
+
+    function extractRecords(payload) {
+      if (Array.isArray(payload)) return payload;
+      if (!payload || typeof payload !== 'object') return [];
+      if (Array.isArray(payload.records)) return payload.records;
+      if (Array.isArray(payload.items)) return payload.items;
+      if (Array.isArray(payload.data)) return payload.data;
+      if (payload.data && Array.isArray(payload.data.records)) return payload.data.records;
+      if (payload.data && Array.isArray(payload.data.items)) return payload.data.items;
+      if (payload.data && payload.data.data && Array.isArray(payload.data.data.records)) return payload.data.data.records;
+      return [];
+    }
+
+    function normalizeCell(value) {
+      if (value == null) return '';
+      if (Array.isArray(value)) return value.map(normalizeCell).filter(Boolean).join('/');
+      if (typeof value === 'object') {
+        if ('text' in value) return normalizeCell(value.text);
+        if ('name' in value) return normalizeCell(value.name);
+        if ('value' in value) return normalizeCell(value.value);
+        return Object.values(value).map(normalizeCell).filter(Boolean).join('/');
+      }
+      return String(value).trim();
+    }
+
+    function setLoading(disabled, message) {
+      $('generateBtn').disabled = disabled;
+      $('output').innerHTML = `<div class="empty">${message}</div>`;
+    }
+
+    function setReady(message) {
+      $('output').innerHTML = `<div class="empty">${message}</div>`;
+    }
+
+    function setError(message) {
+      $('output').innerHTML = `<div class="empty"><div><strong>接口请求失败</strong><br>${escapeText(message)}</div></div>`;
+    }
+
+    function renderCheckboxes(id, options, checked) {
+      $(id).innerHTML = options.map(opt => `
+        <label class="chip"><input type="checkbox" value="${opt}" ${checked.includes(opt) ? 'checked' : ''}> ${opt}</label>
+      `).join('');
+    }
+
+    function selectedValues(id) {
+      return [...$(id).querySelectorAll('input:checked')].map(el => el.value);
+    }
+
+    function renderStats() {
+      const counts = PLACES.reduce((acc, p) => {
+        acc[p.类型] = (acc[p.类型] || 0) + 1;
+        return acc;
+      }, {});
+      $('stats').innerHTML = [
+        ['总点位', PLACES.length],
+        ['户外点', (counts['户外徒步'] || 0) + (counts['户外露营'] || 0)],
+        ['美食夜游', (counts['平价美食'] || 0) + (counts['夜景夜市'] || 0)],
+        ['亲子人文', (counts['亲子乐园'] || 0) + (counts['历史人文'] || 0)]
+      ].map(([label, value]) => `<div class="stat"><b>${value}</b><span>${label}</span></div>`).join('');
+    }
+
+    function generatePlan() {
+      if (!PLACES.length) {
+        currentPlan = null;
+        setError('当前没有可用点位数据，无法生成行程。');
+        return;
+      }
+      const days = Number($('days').value);
+      const people = Number($('people').value || 1);
+      const ages = selectedValues('ageGroup');
+      const prefs = selectedValues('prefs');
+      const scored = PLACES.map(place => ({ ...place, score: scorePlace(place, ages, prefs) }))
+        .filter(p => p.score > -20)
+        .sort((a, b) => b.score - a.score || priceValue(a.人均消费) - priceValue(b.人均消费));
+      if (!scored.length) {
+        currentPlan = null;
+        renderNoMatch(days, people, ages, prefs);
+        return;
+      }
+      currentPlan = buildSchedule(days, people, ages, prefs, scored);
+      renderPlan(currentPlan);
+    }
+
+    function renderNoMatch(days, people, ages, prefs) {
+      $('output').innerHTML = `
+        <div class="empty">
+          <div>
+            <strong>暂无匹配点位</strong><br>
+            当前条件：${days}天｜${people}人｜${ages.join('、') || '未选择人群'}｜${prefs.join('、') || '未选择偏好'}。<br>
+            建议减少偏好限制，或在飞书表格补充对应类型点位。
+          </div>
+        </div>
+      `;
+    }
+
+    // 核心筛选逻辑：与 Skill 规则保持一致，老人低体力、儿童亲子、年轻人徒步露营、省钱优先低消费。
+    function scorePlace(place, ages, prefs) {
+      let score = 0;
+      const text = Object.values(place).join(' ');
+      const hasElder = ages.includes('60+老人');
+      const hasChild = ages.includes('幼儿') || ages.includes('孩童');
+      const hasYoung = ages.includes('中青年');
+      if (hasElder && String(place.体力强度).includes('高')) return -100;
+      if (hasElder && String(place.体力强度).includes('低')) score += 18;
+      if (hasChild && (place.类型 === '亲子乐园' || includesAny(place.适配人群, ['幼儿','小学生']))) score += 18;
+      if (hasChild && place.类型 === '历史人文') score -= 4;
+      if (hasYoung && ['户外徒步', '户外露营', '夜景夜市'].includes(place.类型)) score += 8;
+      if (prefs.includes('户外徒步') && ['户外徒步', '户外露营'].includes(place.类型)) score += 25;
+      if (prefs.includes('美食探店') && place.类型 === '平价美食') score += 25;
+      if (prefs.includes('亲子休闲') && place.类型 === '亲子乐园') score += 25;
+      if (prefs.includes('慢节奏少走路') && String(place.体力强度).includes('低')) score += 18;
+      if (prefs.includes('慢节奏少走路') && String(place.体力强度).includes('高')) score -= 20;
+      if (prefs.includes('夜景打卡') && place.类型 === '夜景夜市') score += 25;
+      if (prefs.includes('小众冷门') && includesAny(text, ['小众','林场','江滩','湿地','野餐','露营','步道'])) score += 14;
+      if (prefs.includes('平价省钱')) {
+        const price = priceValue(place.人均消费);
+        if (price <= 30) score += 16;
+        else if (price <= 80) score += 8;
+        else score -= 8;
+      }
+      if (includesAny(place.适配人群, ages)) score += 8;
+      if (String(place.特色亮点).length > 8) score += 3;
+      if (String(place.避坑提示).length > 8) score += 3;
+      return score;
+    }
+
+    function placeRegion(place) {
+      const text = `${place.名称 || ''} ${place.地理位置 || ''} ${place.特色亮点 || ''}`;
+      if (includesAny(text, ['茅山', '宝华山', '句容', '赤山湖', '磨盘山'])) return '句容片区';
+      if (includesAny(text, ['世业洲', '丹徒', '长山'])) return '丹徒片区';
+      if (includesAny(text, ['南山', '征润洲', '润州', '黄山北路', '火车站', '近郊民宿'])) return '润州片区';
+      if (includesAny(text, ['金山', '焦山', '北固山', '西津渡', '金山湖', '大市口', '苏宁', '大龙王巷', '丁卯', '市区', '锅盖面', '宴春', '江鲜', '香醋', '镇江博物馆', '赛珍珠'])) return '京口片区';
+      return '京口片区';
+    }
+
+    function isStrictFullDayRegion(region, place) {
+      const name = place ? place.名称 || '' : '';
+      return region === '句容片区' || includesAny(name, ['茅山', '宝华山']);
+    }
+
+    function preferredRegionOrder(prefs, ages) {
+      const order = [];
+      if (prefs.includes('户外徒步') || prefs.includes('小众冷门')) order.push('句容片区', '润州片区', '丹徒片区');
+      if (prefs.includes('夜景打卡') || prefs.includes('美食探店')) order.push('京口片区');
+      if (prefs.includes('亲子休闲')) order.push('丹徒片区', '京口片区');
+      if (ages.includes('60+老人') || prefs.includes('慢节奏少走路')) order.push('京口片区', '润州片区');
+      order.push('京口片区', '润州片区', '丹徒片区', '句容片区');
+      return [...new Set(order)];
+    }
+
+    function chooseDayRegions(days, scored, prefs, ages) {
+      const regionScores = {};
+      scored.forEach(place => {
+        const region = placeRegion(place);
+        regionScores[region] = (regionScores[region] || 0) + place.score;
+      });
+      const preferred = preferredRegionOrder(prefs, ages)
+        .filter(region => scored.some(place => placeRegion(place) === region))
+        .sort((a, b) => (regionScores[b] || 0) - (regionScores[a] || 0));
+      const fallback = ['京口片区', '润州片区', '丹徒片区', '句容片区']
+        .filter(region => scored.some(place => placeRegion(place) === region) && !preferred.includes(region));
+      const regions = preferred.concat(fallback);
+      return Array.from({ length: days }, (_, index) => regions[index % Math.max(1, regions.length)] || '京口片区');
+    }
+
+    function buildSchedule(days, people, ages, prefs, scored) {
+      const used = new Set();
+      const dayRegions = chooseDayRegions(days, scored, prefs, ages);
+      const byType = (types, region = null) => scored.filter(p => {
+        if (!types.includes(p.类型) || used.has(p.名称)) return false;
+        return !region || placeRegion(p) === region;
+      });
+      const pick = (types, slot, dayState, fallbackTypes = types) => {
+        const { region, strictRegion } = dayState;
+        let list = byType(types, region).filter(p => String(p.推荐停留时段).includes(slot));
+        if (!list.length) list = byType(types, region);
+        if (!list.length) list = byType(fallbackTypes, region);
+        if (!list.length && !strictRegion && !dayState.crossed) {
+          list = byType(types).filter(p => String(p.推荐停留时段).includes(slot));
+          if (!list.length) list = byType(types);
+          if (!list.length) list = byType(fallbackTypes);
+          if (list.length && placeRegion(list[0]) !== region) dayState.crossed = true;
+        }
+        const item = list[0] || null;
+        if (item) used.add(item.名称);
+        return item;
+      };
+      const dayPlans = [];
+      for (let d = 1; d <= days; d++) {
+        const region = dayRegions[d - 1];
+        const strictRegion = region === '句容片区';
+        const dayState = { region, strictRegion, crossed: false };
+        const morningTypes = prefs.includes('户外徒步') ? ['户外徒步', '户外露营'] : ['历史人文', '亲子乐园', '户外徒步'];
+        const afternoonTypes = prefs.includes('亲子休闲') ? ['亲子乐园', '历史人文', '户外露营'] : ['户外徒步', '户外露营', '历史人文'];
+        const eveningTypes = prefs.includes('夜景打卡') ? ['夜景夜市', '平价美食'] : ['平价美食', '夜景夜市'];
+        const day = {
+          index: d,
+          region,
+          theme: makeTheme(d, prefs, region),
+          slots: [
+            { time: '上午', place: pick(morningTypes, '上午', dayState) },
+            { time: '中午', place: pick(['平价美食'], '中午', dayState, ['平价美食', '夜景夜市']) },
+            { time: '下午', place: pick(afternoonTypes, '下午', dayState) },
+            { time: '晚上', place: pick(eveningTypes, '夜晚', dayState) }
+          ],
+          lodging: d < days ? pick(['平价住宿'], '夜晚', dayState, ['平价住宿']) : null,
+          crossed: dayState.crossed,
+          dispatchNote: dayState.crossed
+            ? '当天仅跨片区1次，用于补足餐饮/住宿资源'
+            : '当天优先同片区游玩，减少跨区域奔波'
+        };
+        dayPlans.push(day);
+      }
+      return {
+        days,
+        people,
+        ages,
+        prefs,
+        dayPlans,
+        dmText: buildDmText(dayPlans, people, ages, prefs),
+        socialText: buildSocialText(dayPlans, people, ages, prefs)
+      };
+    }
+
+    function makeTheme(day, prefs, region) {
+      if (region === '句容片区') return '句容山野完整一天';
+      if (day === 1 && prefs.includes('户外徒步')) return '同片区低成本户外开场';
+      if (prefs.includes('夜景打卡')) return '夜景美食收尾';
+      if (prefs.includes('亲子休闲')) return '亲子轻松探索';
+      return '镇江慢游精选';
+    }
+
+    function renderPlan(plan) {
+      $('output').innerHTML = `
+        <h2 class="section-title">生成结果｜${plan.days}天行程，${plan.people}人</h2>
+        ${plan.dayPlans.map(renderDay).join('')}
+        <div class="copy-area">
+          <div><h3>小红书/抖音文案</h3><textarea readonly>${escapeText(plan.socialText)}</textarea></div>
+          <div><h3>私信简洁版</h3><textarea readonly>${escapeText(plan.dmText)}</textarea></div>
+        </div>
+      `;
+    }
+
+    function renderDay(day) {
+      return `<article class="day">
+        <div class="day-head"><h3>Day ${day.index}｜${day.region}</h3><span class="day-theme">${day.theme}｜${day.dispatchNote}</span></div>
+        ${day.slots.map(s => renderSlot(s.time, s.place)).join('')}
+        ${day.lodging ? renderSlot('住宿', day.lodging) : ''}
+      </article>`;
+    }
+
+    function renderSlot(time, place) {
+      if (!place) return `<div class="slot"><div class="slot-time">${time}</div><div>资源库暂无匹配点位</div></div>`;
+      return `<div class="slot">
+        <div class="slot-time">${time}</div>
+        <div>
+          <div class="place-title"><strong>${place.名称}</strong><span class="tag">${place.类型}</span><span class="tag">${place.体力强度}</span></div>
+          <div class="meta">耗时：${place.游玩耗时 || '待补充'}｜人均：${place.人均消费 || '待核验'}｜片区：${placeRegion(place)}｜位置：${place.地理位置 || '待补充'}</div>
+          <div class="meta">看点：${place.特色亮点 || '待补充'}</div>
+          <div class="tip">避坑：${place.避坑提示 || '出发前复核营业、停车和预约信息'}</div>
+        </div>
+      </div>`;
+    }
+
+    function buildDmText(dayPlans, people, ages, prefs) {
+      const lines = [`【镇江${dayPlans.length}日游定制行程｜适配你们全家】`, `出行人员：${people}人｜${ages.join('、') || '未选择'}`, `节奏说明：${prefs.join('、') || '综合轻松路线'}`, ''];
+      dayPlans.forEach(day => {
+        lines.push(`Day${day.index}｜${day.region}｜${day.theme}`);
+        lines.push(`调度说明：${day.dispatchNote}`);
+        day.slots.forEach(s => lines.push(`${s.time}：${s.place ? s.place.名称 + '｜' + s.place.特色亮点 : '资源库暂无匹配点位'}`));
+        if (day.lodging) lines.push(`住宿建议：${day.lodging.名称}｜${day.lodging.地理位置}`);
+        lines.push('');
+      });
+      lines.push('开心哥哥实拍小贴士：优先按同片区走，户外点注意天气、防滑、补水；价格和停车以现场为准。');
+      return lines.join('\\n');
+    }
+
+    function buildSocialText(dayPlans, people, ages, prefs) {
+      const foods = uniquePlaces(dayPlans.flatMap(d => d.slots.map(s => s.place)).filter(p => p && p.类型 === '平价美食')).slice(0, 6);
+      const tips = uniquePlaces(dayPlans.flatMap(d => [...d.slots.map(s => s.place), d.lodging]).filter(Boolean)).slice(0, 8);
+      const lines = [`镇江${dayPlans.length}天低成本玩法｜${prefs.join(' + ') || '本地路线'}`, '', `这条路线适合${people}人出行，重点照顾：${ages.join('、') || '中青年'}。`, ''];
+      dayPlans.forEach(day => {
+        lines.push(`📍Day ${day.index}｜${day.region}｜${day.theme}`);
+        lines.push(`调度：${day.dispatchNote}`);
+        day.slots.forEach(s => lines.push(`${s.time}：${s.place ? s.place.名称 : '资源库暂无匹配点位'}`));
+        if (day.lodging) lines.push(`住宿：${day.lodging.名称}`);
+        lines.push('');
+      });
+      lines.push('🍜 镇江必吃本地美食清单');
+      foods.forEach(p => lines.push(`- ${p.名称}｜${p.特色亮点}｜人均${p.人均消费 || '待核验'}`));
+      lines.push('', '⚠️ 避坑干货');
+      tips.forEach(p => lines.push(`- ${p.名称}：${p.避坑提示 || '出发前复核'}`));
+      lines.push('', '#镇江旅游 #镇江亲子游 #开心哥哥爱户外 #西津渡攻略 #茅山徒步');
+      return lines.join('\\n');
+    }
+
+    function uniquePlaces(list) {
+      const seen = new Set();
+      return list.filter(p => p && !seen.has(p.名称) && seen.add(p.名称));
+    }
+
+    function escapeText(text) {
+      return String(text).replace(/[&<>]/g, ch => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[ch]));
+    }
+
+    async function copyText(text, emptyMessage) {
+      if (!text) return showToast(emptyMessage);
+      try {
+        await navigator.clipboard.writeText(text);
+      } catch (err) {
+        const ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        ta.remove();
+      }
+      showToast('已复制到剪贴板');
+    }
+
+    function showToast(message) {
+      const toast = $('toast');
+      toast.textContent = message;
+      toast.classList.add('show');
+      setTimeout(() => toast.classList.remove('show'), 1800);
+    }
+
+    init();
+  </script>
+</body>
+</html>
+"""
+
+
+def main():
+    OUTPUT.write_text(build_html([]), encoding="utf-8")
+    print(f"wrote {OUTPUT} with remote data loading")
+
+
+if __name__ == "__main__":
+    main()
